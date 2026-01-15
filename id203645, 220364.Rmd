@@ -1,0 +1,109 @@
+---
+title: "White shark data2"
+author: "Leo Lyu"
+date: "2026-01-07"
+output: pdf_document
+---
+
+```{r}
+library(dplyr)
+library(aniMotum)
+library(tidyverse)
+library(sf)
+library(patchwork)
+library(lubridate)
+
+df <- read.csv("final_whale_shark.csv", stringsAsFactors = FALSE)
+```
+
+
+```{r}
+fit_ids <- c(203645, 220364)
+
+df_2to4 <- df %>%
+  filter(id %in% fit_ids)
+
+fit_2to4 <- fit_ssm(
+  df_2to4,
+  model = "crw",
+  vmax = 5,
+  time.step = 24,
+  control = ssm_control(verbose = 0)
+)
+
+summary(fit_2to4)
+```
+
+
+```{r}
+plot(fit_2to4,
+     what = "predicted",
+     type = 1,
+     pages = 1,
+     ncol = 3)
+
+```
+
+
+
+```{r}
+aniMotum::map(fit_2to4,
+ what = "predicted")
+```
+
+```{r}
+res <- osar(fit_2to4)
+plot(res, type = "ts", pages = 1) | plot(res, type = "qq", pages = 1) | plot(res, type = "acf", pages = 1)
+```
+
+```{r}
+fmpm <- fit_mpm(fit_2to4,
+                what = "predicted",
+                model = "jmpm",
+                control = mpm_control(verbose = 0))
+
+plot(fmpm,
+     pages = 1,
+     ncol = 2)
+```
+
+
+```{r, include=TRUE}
+df_locs <- fit_2to4 |> grab("predicted")
+df_mpm <- fmpm |> grab("fitted")
+
+# combine
+df <- df_locs |> left_join(df_mpm)
+df
+```
+
+
+```{r, include=TRUE}
+library(ggplot2)
+library(rnaturalearth)
+library(viridis)
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+prj <- "+proj=laea +lat_0=60 +lon_0=-50 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"
+df_sf <- st_as_sf(df, coords = c("lon","lat"), crs = 4326, remove = FALSE)
+
+df_prj <- st_transform(df_sf, crs = prj)
+bb <- st_bbox(df_prj)
+
+padx <- (bb$xmax - bb$xmin) * 0.1
+pady <- (bb$ymax - bb$ymin) * 0.1
+
+ggplot() +
+  theme_bw() +
+  geom_sf(data = st_transform(world, prj), fill = "grey90", colour = "grey40", linewidth = 0.2) +
+  geom_sf(data = df_prj, aes(colour = g), size = 1, show.legend = "point") +
+  scale_color_viridis_c(expression(gamma[t]), limits = c(0, 1)) +
+  coord_sf(
+    xlim = c(bb$xmin - padx, bb$xmax + padx),
+    ylim = c(bb$ymin - pady, bb$ymax + pady),
+    expand = FALSE
+  ) +
+  facet_wrap(~id, nrow = 1)
+
+```
