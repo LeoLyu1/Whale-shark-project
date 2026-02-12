@@ -1,0 +1,283 @@
+---
+title: "EDA"
+author: "Leo Lyu"
+date: "2026-01-21"
+output: pdf_document
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(readr)
+  library(dplyr)
+  library(ggplot2)
+  library(sf)
+  library(rnaturalearth)
+  library(rnaturalearthdata)
+})
+
+
+df <- read_csv("final_whale_shark.csv", show_col_types = FALSE) %>%
+  filter(!is.na(lon), !is.na(lat))
+
+# 2) World map (countries)
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# 3) Plot map + points (no boxplots)
+p_map <- ggplot() +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.background = element_rect(fill = "#d9f0ff", colour = NA), # ocean
+    plot.background  = element_rect(fill = "white", colour = NA)
+  ) +
+  geom_sf(
+    data = world,
+    fill = "#f2efe9",    
+    color = "grey40",
+    linewidth = 0.2
+  ) +
+  geom_point(
+    data = df,
+    aes(x = lon, y = lat),
+    alpha = 0.25,
+    size = 0.8,
+    color = "#2b6cb0"
+  ) +
+  coord_sf(
+    xlim = range(df$lon, na.rm = TRUE),
+    ylim = range(df$lat, na.rm = TRUE),
+    expand = FALSE
+  ) +
+  labs(
+    title = "Whale shark locations",
+    x = "Longitude",
+    y = "Latitude"
+  )
+
+print(p_map)
+
+```
+
+```{r}
+
+
+
+  library(readr)
+  library(dplyr)
+  library(ggplot2)
+  library(ggExtra)
+
+df <- read_csv("final_whale_shark.csv", show_col_types = FALSE) %>%
+  filter(!is.na(lon), !is.na(lat))
+
+# 2) Base scatter (middle points)
+xlim <- range(df$lon, na.rm = TRUE)
+ylim <- range(df$lat, na.rm = TRUE)
+
+p_base <- ggplot(df, aes(x = lon, y = lat)) +
+  geom_point(alpha = 0.25, size = 0.8) +
+  coord_cartesian(xlim = xlim, ylim = ylim, expand = FALSE) +
+  labs(
+    title = "Whale shark locations Boxplot",
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  theme_minimal(base_size = 12)
+
+# 3) Add marginal boxplots (top + right) — aligned automatically
+p_final <- ggMarginal(
+  p_base,
+  type = "boxplot",
+  margins = "both",
+  size = 6,
+  outlier.alpha = 0.15
+)
+
+print(p_final)
+mean(df$lon)
+mean(df$lat)
+```
+
+```{r}
+
+library(readr)
+library(dplyr)
+library(lubridate)
+library(stringr)
+library(ggplot2)
+
+
+dat <- read_csv("final_whale_shark.csv", show_col_types = FALSE)
+
+gaps <- dat %>%
+  mutate(
+    datetime = ymd_hms(str_remove(date, "Z"), tz = "UTC")  # 处理末尾Z
+  ) %>%
+  arrange(id, datetime) %>%
+  group_by(id) %>%
+  mutate(
+    gap_hours = as.numeric(difftime(datetime, lag(datetime), units = "hours"))
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(gap_hours), gap_hours >= 0)
+
+p_linear <- ggplot(gaps %>% filter(gap_hours <= 48), aes(gap_hours)) +
+  geom_histogram(bins = 60) +
+  labs(
+    title = "Time gap distribution",
+    x = "Time gap (hours, <= 48h shown)",
+    y = "Count"
+  )
+
+print(p_linear)
+
+p_log <- ggplot(gaps %>% filter(gap_hours > 0), aes(gap_hours)) +
+  geom_histogram(bins = 80) +
+  scale_x_log10() +
+  labs(
+    title = "Time gap distribution (log10 x-scale)",
+    x = "Time gap (hours, log10 scale)",
+    y = "Count"
+  )
+
+print(p_log)
+
+gaps %>%
+  summarise(
+    n = n(),
+    min = min(gap_hours),
+    p50 = quantile(gap_hours, 0.50),
+    p90 = quantile(gap_hours, 0.90),
+    p95 = quantile(gap_hours, 0.95),
+    p99 = quantile(gap_hours, 0.99),
+    max = max(gap_hours)
+  )
+
+
+```
+
+```{r}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(forcats)
+
+dat <- read_csv("final_whale_shark.csv", show_col_types = FALSE)
+
+tab <- dat %>%
+  mutate(lc = as.character(lc)) %>%
+  filter(!is.na(lc)) %>%
+  count(lc, sort = TRUE)
+
+p1 <- ggplot(tab, aes(x = fct_reorder(lc, n), y = n, fill = lc)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Error type distribution (LC)",
+    x = "Error type (lc)",
+    y = "Count",
+    fill = "LC"
+  ) +
+  geom_text(aes(label = n), hjust = -0.1, show.legend = FALSE) +
+  expand_limits(y = max(tab$n) * 1.1)
+
+print(p1)
+
+p2 <- ggplot(tab, aes(x = fct_reorder(lc, n), y = n, fill = lc)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  labs(
+    title = "Error type distribution (LC)",
+    x = "Error type (lc)",
+    y = "Count"
+  ) +
+  geom_text(aes(label = n), hjust = -0.1) +
+  expand_limits(y = max(tab$n) * 1.1)
+
+print(p2)
+
+```
+
+
+```{r}
+library(readr)
+library(dplyr)
+library(lubridate)
+library(stringr)
+library(ggplot2)
+
+dat <- read_csv("final_whale_shark.csv", show_col_types = FALSE) %>%
+  mutate(datetime = ymd_hms(str_remove(as.character(date), "Z"), tz = "UTC"))
+
+
+top9_ids <- dat %>%
+  filter(!is.na(id), !is.na(datetime)) %>%
+  count(id, name = "n_obs", sort = TRUE) %>%
+  slice_head(n = 9) %>%
+  pull(id)
+
+
+gaps_top9 <- dat %>%
+  filter(id %in% top9_ids, !is.na(datetime)) %>%
+  arrange(id, datetime) %>%
+  group_by(id) %>%
+  mutate(gap_hours = as.numeric(difftime(datetime, lag(datetime), units = "hours"))) %>%
+  ungroup() %>%
+  filter(!is.na(gap_hours), gap_hours >= 0)
+
+
+p_linear <- ggplot(gaps_top9, aes(x = gap_hours)) +
+  geom_histogram(bins = 60) +
+  facet_wrap(~ id, scales = "free_y") +
+  labs(
+    title = "Time gap distribution for top 9 IDs (by #observations)",
+    x = "Time gap (hours)",
+    y = "Count"
+  )
+
+print(p_linear)
+
+
+p_log <- ggplot(gaps_top9 %>% filter(gap_hours > 0), aes(x = gap_hours)) +
+  geom_histogram(bins = 60) +
+  scale_x_log10() +
+  facet_wrap(~ id, scales = "free_y") +
+  labs(
+    title = "Time gap distribution for top 9 IDs (log10 x-scale)",
+    x = "Time gap (hours, log10 scale)",
+    y = "Count"
+  )
+
+print(p_log)
+
+
+```
+
+
+```{r}
+# log10 x-scale version: shade the area to the right of vmax in red
+
+vmax <- 2.7
+max_x <- max(steps$speed_mps, na.rm = TRUE)
+
+p_speed_redzone_log <- ggplot(steps %>% dplyr::filter(speed_mps > 0), aes(x = speed_mps)) +
+  geom_histogram(bins = 80) +
+  annotate(
+    "rect",
+    xmin = vmax, xmax = max_x,
+    ymin = -Inf, ymax = Inf,
+    fill = "red", alpha = 0.20
+  ) +
+  geom_vline(xintercept = vmax, linetype = "dashed", linewidth = 0.9) +
+  scale_x_log10() +
+  labs(
+    title = "Step speed distribution (log10 x-scale)",
+    subtitle = paste0("Red shaded area = speed > ", vmax, " m/s (vmax)"),
+    x = "Speed (m/s, log10 scale)",
+    y = "Count"
+  ) +
+  theme_minimal(base_size = 12)
+
+print(p_speed_redzone_log)
+
+
+```
