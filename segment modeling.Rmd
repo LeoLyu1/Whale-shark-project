@@ -1,0 +1,123 @@
+---
+title: "Segment modeling"
+author: "Leo Lyu"
+date: "2026-03-04"
+output: pdf_document
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(mgcv)
+library(lme4)
+library(readr)
+library(patchwork)
+
+analysis_df <- read_csv("shark_analysis_with_sst.csv")
+analysis_df$gamma <- analysis_df$g
+```
+
+```{r}
+# Distribution of gamma (movement persistence)
+summary(analysis_df$gamma)
+mean(analysis_df$gamma, na.rm = TRUE)
+sd(analysis_df$gamma, na.rm = TRUE)
+
+# boundary checks (exact and near-boundary)
+mean(analysis_df$gamma <= 0, na.rm = TRUE)
+mean(analysis_df$gamma >= 1, na.rm = TRUE)
+mean(analysis_df$gamma < 0.01, na.rm = TRUE)
+mean(analysis_df$gamma > 0.99, na.rm = TRUE)
+
+# create a cleaned version for plotting/modeling (keep original unchanged)
+analysis_df_clean <- analysis_df %>%
+  filter(!is.na(gamma), gamma >= 0, gamma <= 1)
+
+ggplot(analysis_df_clean, aes(x = gamma)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 40, alpha = 0.8) +
+  geom_density() +
+  coord_cartesian(xlim = c(0, 1)) +
+  theme_minimal() +
+  labs(x = "Gamma (movement persistence)", y = "Density")
+
+```
+```{r}
+# Scatter: gamma vs SST
+ggplot(analysis_df, aes(x = sst, y = gamma)) +
+  geom_point(alpha = 0.25) +
+  geom_smooth(method = "loess", se = TRUE) +
+  theme_minimal() +
+  labs(x = "Sea Surface Temperature (°C)", y = "Gamma (movement persistence)")
+```
+
+```{r}
+# Basic regression
+fit_lm <- lm(gamma ~ sst, data = analysis_df)
+summary(fit_lm)
+
+par(mfrow = c(1,2))
+plot(fit_lm$fitted.values, resid(fit_lm), xlab="Fitted", ylab="Residuals")
+abline(h = 0, lty = 2)
+qqnorm(resid(fit_lm)); qqline(resid(fit_lm))
+par(mfrow = c(1,1))
+```
+```{r}
+# Linear mixed model: random intercept for shark/track id
+fit_lmm <- lmer(gamma ~ sst + (1 | id), data = analysis_df)
+summary(fit_lmm)
+```
+
+```{r}
+# Residual diagnostics for LMM
+model_df <- model.frame(fit_lmm)
+model_df$fitted_lmm <- fitted(fit_lmm)
+model_df$resid_lmm  <- resid(fit_lmm)
+
+ggplot(model_df, aes(x = fitted_lmm, y = resid_lmm)) +
+  geom_point(alpha = 0.3) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  theme_minimal() +
+  labs(x = "Fitted values", y = "Residuals")
+
+qqnorm(model_df$resid_lmm)
+qqline(model_df$resid_lmm)
+```
+
+
+```{r}
+# Logit transform gamma (trim to avoid 0/1)
+model_df$gamma_trim  <- pmin(pmax(model_df$gamma, 0.001), 0.999)
+model_df$gamma_logit <- qlogis(model_df$gamma_trim)
+
+fit_lmm_logit <- lmer(gamma_logit ~ sst + (1 | id), data = model_df)
+summary(fit_lmm_logit)
+
+# Diagnostics on logit scale
+model_df$fitted_logit <- fitted(fit_lmm_logit)
+model_df$resid_logit  <- resid(fit_lmm_logit)
+
+ggplot(model_df, aes(x = fitted_logit, y = resid_logit)) +
+  geom_point(alpha = 0.3) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  theme_minimal() +
+  labs(x = "Fitted values (logit scale)", y = "Residuals")
+
+qqnorm(model_df$resid_logit)
+qqline(model_df$resid_logit)
+```
+
+```{r}
+# Beta GAMM: nonlinear effect + random effect
+model_df$gamma_beta <- pmin(pmax(model_df$gamma, 0.001), 0.999)
+
+fit_gamm_beta <- gam(
+  gamma_beta ~ s(sst) + s(id, bs = "re"),
+  family = betar(link = "logit"),
+  data = model_df,
+  method = "REML"
+)
+summary(fit_gamm_beta)
+```
+
+
+
